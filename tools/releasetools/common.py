@@ -480,13 +480,16 @@ class BuildInfo(object):
     return self.get("virtual_ab_compression_method", "")
 
   @property
+  def vabc_cow_version(self):
+    return self.get("virtual_ab_cow_version", "")
+
+  @property
   def vendor_api_level(self):
     vendor_prop = self.info_dict.get("vendor.build.prop")
     if not vendor_prop:
       return -1
 
     props = [
-        "ro.board.api_level",
         "ro.board.first_api_level",
         "ro.product.first_api_level",
     ]
@@ -1573,50 +1576,6 @@ def GetAvbChainedPartitionArg(partition, info_dict, key=None):
       pubkey_path=pubkey_path)
 
 
-def _HasGkiCertificationArgs():
-  return ("gki_signing_key_path" in OPTIONS.info_dict and
-          "gki_signing_algorithm" in OPTIONS.info_dict)
-
-
-def _GenerateGkiCertificate(image, image_name):
-  key_path = OPTIONS.info_dict.get("gki_signing_key_path")
-  algorithm = OPTIONS.info_dict.get("gki_signing_algorithm")
-
-  key_path = ResolveAVBSigningPathArgs(key_path)
-
-  # Checks key_path exists, before processing --gki_signing_* args.
-  if not os.path.exists(key_path):
-    raise ExternalError(
-        'gki_signing_key_path: "{}" not found'.format(key_path))
-
-  output_certificate = tempfile.NamedTemporaryFile()
-  cmd = [
-      "generate_gki_certificate",
-      "--name", image_name,
-      "--algorithm", algorithm,
-      "--key", key_path,
-      "--output", output_certificate.name,
-      image,
-  ]
-
-  signature_args = OPTIONS.info_dict.get("gki_signing_signature_args", "")
-  signature_args = signature_args.strip()
-  if signature_args:
-    cmd.extend(["--additional_avb_args", signature_args])
-
-  args = OPTIONS.info_dict.get("avb_boot_add_hash_footer_args", "")
-  args = args.strip()
-  if args:
-    cmd.extend(["--additional_avb_args", args])
-
-  RunAndCheckOutput(cmd)
-
-  output_certificate.seek(os.SEEK_SET, 0)
-  data = output_certificate.read()
-  output_certificate.close()
-  return data
-
-
 def BuildVBMeta(image_path, partitions, name, needed_partitions,
                 resolve_rollback_index_location_conflict=False):
   """Creates a VBMeta image.
@@ -1846,29 +1805,6 @@ def _BuildBootableImage(image_name, sourcedir, fs_config_file,
       cmd.extend(["--recovery_acpio", fn])
 
   RunAndCheckOutput(cmd)
-
-  if _HasGkiCertificationArgs():
-    if not os.path.exists(img.name):
-      raise ValueError("Cannot find GKI boot.img")
-    if kernel_path is None or not os.path.exists(kernel_path):
-      raise ValueError("Cannot find GKI kernel.img")
-
-    # Certify GKI images.
-    boot_signature_bytes = b''
-    boot_signature_bytes += _GenerateGkiCertificate(img.name, "boot")
-    boot_signature_bytes += _GenerateGkiCertificate(
-        kernel_path, "generic_kernel")
-
-    BOOT_SIGNATURE_SIZE = 16 * 1024
-    if len(boot_signature_bytes) > BOOT_SIGNATURE_SIZE:
-      raise ValueError(
-          f"GKI boot_signature size must be <= {BOOT_SIGNATURE_SIZE}")
-    boot_signature_bytes += (
-        b'\0' * (BOOT_SIGNATURE_SIZE - len(boot_signature_bytes)))
-    assert len(boot_signature_bytes) == BOOT_SIGNATURE_SIZE
-
-    with open(img.name, 'ab') as f:
-      f.write(boot_signature_bytes)
 
   # Sign the image if vboot is non-empty.
   if info_dict.get("vboot"):
@@ -3986,6 +3922,9 @@ class DynamicPartitionsDifference(object):
     if progress_dict is None:
       progress_dict = {}
 
+    self._have_super_empty = \
+      info_dict.get("build_super_empty_partition") == "true"
+
     self._build_without_vendor = build_without_vendor
     self._remove_all_before_apply = False
     if source_info_dict is None:
@@ -4083,8 +4022,13 @@ class DynamicPartitionsDifference(object):
     ZipWrite(output_zip, op_list_path, "dynamic_partitions_op_list")
 
     script.Comment('Update dynamic partition metadata')
-    script.AppendExtra('assert(update_dynamic_partitions('
-                       'package_extract_file("dynamic_partitions_op_list")));')
+    if self._have_super_empty:
+      script.AppendExtra('assert(update_dynamic_partitions('
+                        'package_extract_file("dynamic_partitions_op_list"), '
+                        'package_extract_file("unsparse_super_empty.img")));')
+    else:
+      script.AppendExtra('assert(update_dynamic_partitions('
+                        'package_extract_file("dynamic_partitions_op_list")));')
 
     if write_verify_script:
       for p, u in self._partition_updates.items():
