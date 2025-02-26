@@ -1233,15 +1233,12 @@ function setup_ccache() {
 }
 
 function remove_broken_build_tools() {
-    for file in prebuilts/build-tools/path/*/date; do
-        if [ -e "$file" ]; then
-            rm -rf "$file"
-        fi
-    done
-    for file in prebuilts/build-tools/path/*/tar; do
-        if [ -e "$file" ]; then
-            rm -rf "$file"
-        fi
+    if [ -n "$ZSH_VERSION" ]; then
+        setopt NULL_GLOB
+    fi
+
+    for file in prebuilts/build-tools/path/*/date prebuilts/build-tools/path/*/tar; do
+        [ -e "$file" ] && rm -rf "$file"
     done
 }
 
