@@ -15,8 +15,9 @@
 #
 
 # This is a build configuration that just contains a list of languages, with
-# en_US set as the default language.
+# ja_JP set as the default language.
 PRODUCT_LOCALES := \
+        ja_JP \
         en_US \
         af_ZA \
         am_ET \
@@ -56,7 +57,6 @@ PRODUCT_LOCALES := \
         is_IS \
         it_IT \
         iw_IL \
-        ja_JP \
         ka_GE \
         kk_KZ \
         km_KH \
