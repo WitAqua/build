@@ -181,7 +181,7 @@ android_system_image {
         "EmergencyInfo",
 
         // handheld_product
-        "Calendar",
+        "Etar",
         "Contacts",
         "DeskClock",
         "Gallery2",
